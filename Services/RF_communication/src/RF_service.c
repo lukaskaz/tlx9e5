@@ -67,7 +67,7 @@ uint32_t radioNodeAddresses[] = {0xC0300C03, 0xC0300C01};
 static void radio_enable_programming(void);
 static FunctionState radio_service(const swap_data *const data_ptr, const radio_transmission mode);
 
-static void radio_data_receive(const swap_data *const data_ptr);
+static FunctionState radio_data_receive(const swap_data *const data_ptr);
 static void radio_data_sent(const swap_data *const data_ptr);
 
 static FunctionState radio_confirmation_receive(const swap_data *const data_ptr);
@@ -82,19 +82,28 @@ Bool is_radio_data_available()
     return radio_data_ready;
 }
 
-FunctionState radio_configuration(const swap_data *const data_ptr)
+void radio_configuration(const swap_data *const data_ptr)
 {
-    return radio_service(data_ptr, RADIO_CONFIGURE);
+    radio_service(data_ptr, RADIO_CONFIGURE);
 }
 
-FunctionState radio_data_extraction(const swap_data *const data_ptr)
+void radio_data_extraction(const swap_data *const data_ptr)
 {
-    if(radio_service(data_ptr, RADIO_RECEIVE) == SUCCESS &&
-       uart_data_transmission(data_ptr) == SUCCESS        ) {
-        return SUCCESS;
+    if(radio_service(data_ptr, RADIO_RECEIVE) == SUCCESS) {
+        if(uart_data_transmission(data_ptr) == SUCCESS) {
+            data_ptr->radio_payload.response = RADIO_RES_COMPLETE;
+            //return_status = SUCCESS;
+        }
+        else {
+            data_ptr->radio_payload.response = RADIO_RES_ERROR;
+        }
+        radio_resolve_remote_address(data_ptr->radio_txaddress.txaddr, RADIO_ADDRESS_SIZE, data_ptr->uart_payload.radio_target_addr);
     }
-
-    return FAIL;
+    else {
+        data_ptr->radio_payload.response = RADIO_RES_ERROR;
+    }
+    radio_confirmation_sent(data_ptr);
+    radio_disable();
 }
 
 FunctionState radio_data_transmission(const swap_data *const data_ptr)
@@ -173,12 +182,11 @@ FunctionState radio_service(const swap_data *const data_ptr, const radio_transmi
 
     if(mode == RADIO_RECEIVE)
     {
-        radio_data_receive(data_ptr);
-        radio_confirmation_sent(data_ptr);
+        if(radio_data_receive(data_ptr) == SUCCESS) {
+            data_ptr->data_kind = DATA_RADIO_OUTPUT;
+            return_status = SUCCESS;
+        }
         radio_disable();
-
-        data_ptr->data_kind = DATA_RADIO_OUTPUT;
-        return_status = SUCCESS;
     }
     else if(mode == RADIO_TRANSMIT)
     {
@@ -226,7 +234,7 @@ FunctionState radio_service(const swap_data *const data_ptr, const radio_transmi
 }
 
 
-void radio_data_receive(const swap_data *const data_ptr)
+FunctionState radio_data_receive(const swap_data *const data_ptr)
 {
     uint8_t Carrier_presence = 0;
 
@@ -239,6 +247,8 @@ void radio_data_receive(const swap_data *const data_ptr)
 
     data_ptr->data_kind = DATA_R_RF_RXPAYLOAD;
     spi_data_extraction(data_ptr);
+
+    return radio_data_checksum_verify(data_ptr);
 }
 
 void radio_data_sent(const swap_data *const data_ptr)
@@ -290,14 +300,6 @@ void radio_confirmation_sent(const swap_data *const data_ptr)
     spi_data_transmission(data_ptr);
 
     data_ptr->data_kind = DATA_W_RF_TXPAYLOAD;
-    //radio_resolve_remote_address(data_ptr->radio_payload.base_addr, DATA_ADDRESS_SIZE, RADIO_ADDR_BASE);
-
-    if(radio_data_checksum_verify(data_ptr) != SUCCESS) {
-        data_ptr->radio_payload.response = RADIO_RES_ERROR;
-    }
-    else {
-        data_ptr->radio_payload.response = RADIO_RES_COMPLETE;
-    }
     spi_data_transmission(data_ptr);
 
     radio_enable_transmitter();

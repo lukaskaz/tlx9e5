@@ -39,25 +39,23 @@
 int main(void)
 {
     swap_data data_buffer = {0};
-    Bool waitOpProcessing = FALSE;
 
     global_init(&data_buffer);
     while(1)
     {
-        if(waitOpProcessing != TRUE) {
-            waitOpProcessing = TRUE;
+        if(is_radio_data_available() == TRUE) {
+            uart_disable_receiver();
+            radio_data_extraction(&data_buffer);
+
             uart_enable_receiver();
             radio_enable_receiver();
         }
-        if(is_radio_data_available() == TRUE) {
-            waitOpProcessing = FALSE;
-            uart_disable_receiver();
-            radio_data_extraction(&data_buffer);
-        }
         if(is_uart_data_available() == TRUE) {
-            waitOpProcessing = FALSE;
             radio_disable();
             uart_data_extraction(&data_buffer);
+
+            uart_enable_receiver();
+            radio_enable_receiver();
         }
     }
 

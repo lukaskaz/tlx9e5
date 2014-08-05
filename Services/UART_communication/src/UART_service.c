@@ -64,6 +64,7 @@ typedef enum
 /* Private function prototypes -----------------------------------------------*/
 static FunctionState uart_data_response(const swap_data *const data_ptr);
 static FunctionState uart_service(const swap_data *const data_ptr, const uart_transmission mode);
+static void uart_normal_frame_processing(const swap_data *const data_ptr);
 
 static void uart_data_send(const uint8_t txData);
 static uint8_t uart_data_receive();
@@ -105,10 +106,8 @@ FunctionState uart_data_transmission(swap_data *data_ptr)
     return FAIL;
 }
 
-FunctionState uart_data_extraction(swap_data *data_ptr)
+void uart_data_extraction(swap_data *data_ptr)
 {
-    FunctionState return_status = FAIL;
-
     set_timeout_ms(UART_FRAME_RECEPTION_TIMEOUT_MS);
     if(uart_data_receive() == UART_BASE_ADDRESS)
     {
@@ -116,44 +115,25 @@ FunctionState uart_data_extraction(swap_data *data_ptr)
 
         RB8 = 0;
         SM2 = 0;
-        if(uart_data_receive() == UART_FRAME_NORMAL) {
+
+        frame_type = uart_data_receive();
+        if(frame_type == UART_FRAME_NORMAL) {
             for(i=0; RB8==0 && i<UART_BYTES_FOR_RECEPTION && is_timeout_over() == FALSE; i++) {
                 data_ptr->iodata.byte[i] = uart_data_receive();
             }
         }
         else {
-            frame_type = UART_FRAME_OTHER;
+            // receive all bytes of unsupported frame and then send response
+            for(i=0; RB8==0 && is_timeout_over() == FALSE; i++) {
+                uart_data_receive();
+            }
         }
-        SM2 = 1;
 
+        SM2 = 1;
         uart_disable_receiver();
 
         if(frame_type == UART_FRAME_NORMAL) {
-            //processing normal frame, check if frame content is valid
-            if(uart_data_checksum_verify(data_ptr) == SUCCESS) {
-                //process frame defined function
-                if(data_ptr->uart_payload.function == MOD_FUNC_RADIO_SEND) {
-                    radio_resolve_remote_address(data_ptr->radio_txaddress.txaddr, RADIO_ADDRESS_SIZE, data_ptr->uart_payload.radio_target_addr);
-
-                    data_ptr->data_kind = DATA_RADIO_INPUT;
-                    if(radio_data_transmission(data_ptr) == SUCCESS) {
-                        data_ptr->uart_payload.response = UART_RES_OPERATION_COMPLETE;
-                        return_status = SUCCESS;
-                    }
-                    else {
-                        //radio transmission process failed
-                        data_ptr->uart_payload.response = UART_RES_OPERATION_ERROR;
-                    }
-                }
-                else {
-                    //requested function is not supported yet
-                    data_ptr->uart_payload.response = UART_RES_OPERATION_UNSUPPORTED;
-                }
-            }
-            else {
-                //checksum validation failed
-                data_ptr->uart_payload.response = UART_RES_TRANSFER_ERROR;
-            }
+            uart_normal_frame_processing(data_ptr);
         }
         else {
             //frame type is not supported yet
@@ -162,8 +142,34 @@ FunctionState uart_data_extraction(swap_data *data_ptr)
 
         uart_data_response(data_ptr);
     }
+}
 
-    return return_status;
+void uart_normal_frame_processing(const swap_data *const data_ptr)
+{
+    if(uart_data_checksum_verify(data_ptr) == SUCCESS) {
+        //process frame defined function
+        if(data_ptr->uart_payload.function == MOD_FUNC_RADIO_SEND) {
+            radio_resolve_remote_address(data_ptr->radio_txaddress.txaddr, RADIO_ADDRESS_SIZE, data_ptr->uart_payload.radio_target_addr);
+
+            data_ptr->data_kind = DATA_RADIO_INPUT;
+            if(radio_data_transmission(data_ptr) == SUCCESS) {
+                data_ptr->uart_payload.response = UART_RES_OPERATION_COMPLETE;
+                //return_status = SUCCESS;
+            }
+            else {
+                //radio transmission process failed
+                data_ptr->uart_payload.response = UART_RES_OPERATION_ERROR;
+            }
+        }
+        else {
+            //requested function is not supported yet
+            data_ptr->uart_payload.response = UART_RES_OPERATION_UNSUPPORTED;
+        }
+    }
+    else {
+        //checksum validation failed
+        data_ptr->uart_payload.response = UART_RES_TRANSFER_ERROR;
+    }
 }
 
 FunctionState uart_data_response(const swap_data *const data_ptr)

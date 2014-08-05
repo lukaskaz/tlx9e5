@@ -24,10 +24,8 @@ extern void uart_disable_receiver(void);
 extern void uart_enable_receiver(void);
 
 extern Bool is_uart_data_available(void);
-extern FunctionState uart_data_extraction(swap_data *data_ptr);
+extern void uart_data_extraction(swap_data *data_ptr);
 extern FunctionState uart_data_transmission(swap_data *data_ptr);
-
-void uart_data_send(uint8_t txData);
 /* External variables --------------------------------------------------------*/
 
 

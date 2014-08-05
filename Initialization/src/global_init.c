@@ -24,6 +24,7 @@
 
 #include "SPI_service_internal.h"
 #include "RF_service.h"
+#include "UART_service.h"
 
 /* Private typedef -----------------------------------------------------------*/
 typedef enum
@@ -156,6 +157,9 @@ void global_init(swap_data *data_ptr)
     CPU_initialization();
     SPI_initialization();
     RF_initialization(data_ptr);
+
+    uart_enable_receiver();
+    radio_enable_receiver();
 }
 
 
@@ -171,8 +175,8 @@ static void CPU_initialization(void)
     TR0 = 1;
 
     T2CON = (0<<7)|(0<<6)|(1<<5)|(1<<4)|(0<<3)|(0<<2)|(0<<1)|(0<<0);
-    RCAP2L = 0xF7;
-    RCAP2H = 0xFF;
+    RCAP2L = 0xFC;      // baud rate set to 125000bd
+    RCAP2H = 0xFF;      // br = 16000000/(32 * (0x10000 - 0xFFFC))
     TR2 = 1;
 
     P0_DIR |= 0x06;
@@ -192,7 +196,7 @@ static void CPU_initialization(void)
 static void SPI_initialization(void)
 {
     //SPI_CTRL = SPI_STATE_DISABLED;
-    SPICLK   = SPI_CLK_CPU_1_4;
+    SPICLK   = SPI_CLK_CPU_1_2;
 }
 
 static void RF_initialization(swap_data *data_ptr)
