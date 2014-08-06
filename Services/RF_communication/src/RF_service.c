@@ -53,8 +53,6 @@ typedef enum
 #define RADIO_MAX_RETRANSMISSIONS        10U
 #define RADIO_MAX_RECEIVE_RETRIES        20U
 
-#define RADIO_BYTES_FOR_CHECKSUM_CALC    (DATA_FRAME_SIZE - 2U)
-
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
 #if CONTROLLER
@@ -67,14 +65,13 @@ uint32_t radioNodeAddresses[] = {0xC0300C03, 0xC0300C01};
 static void radio_enable_programming(void);
 static FunctionState radio_service(const swap_data *const data_ptr, const radio_transmission mode);
 
-static FunctionState radio_data_receive(const swap_data *const data_ptr);
+static void radio_data_receive(const swap_data *const data_ptr);
 static void radio_data_sent(const swap_data *const data_ptr);
 
 static FunctionState radio_confirmation_receive(const swap_data *const data_ptr);
 static void radio_confirmation_sent(const swap_data *const data_ptr);
 static void radio_wait_transfer_done(void);
 static void radio_wait_timeout_transfer_done(void);
-static FunctionState radio_data_checksum_verify(swap_data *data_ptr);
 
 /* Private functions ---------------------------------------------------------*/
 Bool is_radio_data_available()
@@ -182,11 +179,11 @@ FunctionState radio_service(const swap_data *const data_ptr, const radio_transmi
 
     if(mode == RADIO_RECEIVE)
     {
-        if(radio_data_receive(data_ptr) == SUCCESS) {
-            data_ptr->data_kind = DATA_RADIO_OUTPUT;
-            return_status = SUCCESS;
-        }
+        radio_data_receive(data_ptr);
         radio_disable();
+
+        data_ptr->data_kind = DATA_RADIO_OUTPUT;
+        return_status = SUCCESS;
     }
     else if(mode == RADIO_TRANSMIT)
     {
@@ -234,7 +231,7 @@ FunctionState radio_service(const swap_data *const data_ptr, const radio_transmi
 }
 
 
-FunctionState radio_data_receive(const swap_data *const data_ptr)
+void radio_data_receive(const swap_data *const data_ptr)
 {
     uint8_t Carrier_presence = 0;
 
@@ -247,8 +244,6 @@ FunctionState radio_data_receive(const swap_data *const data_ptr)
 
     data_ptr->data_kind = DATA_R_RF_RXPAYLOAD;
     spi_data_extraction(data_ptr);
-
-    return radio_data_checksum_verify(data_ptr);
 }
 
 void radio_data_sent(const swap_data *const data_ptr)
@@ -267,7 +262,8 @@ void radio_data_sent(const swap_data *const data_ptr)
 
     data_ptr->data_kind = DATA_W_RF_TXPAYLOAD;
     radio_resolve_remote_address(data_ptr->radio_payload.base_addr, RADIO_ADDRESS_SIZE, RADIO_ADDR_BASE);
-    data_ptr->radio_payload.checksum = data_checksum_calculate(data_ptr, RADIO_BYTES_FOR_CHECKSUM_CALC);
+    // ignore checksum calculating as crc calculation and check is being done by TLX9E5 hardware
+    data_ptr->radio_payload.checksum = 0;
     spi_data_transmission(data_ptr);
 
     radio_enable_transmitter();
@@ -321,15 +317,6 @@ void radio_wait_timeout_transfer_done()
         i++;
     }
     radio_data_ready = FALSE;
-}
-
-FunctionState radio_data_checksum_verify(const swap_data *const data_ptr)
-{
-    if( data_ptr->radio_payload.checksum == data_checksum_calculate(data_ptr, RADIO_BYTES_FOR_CHECKSUM_CALC) ) {
-        return SUCCESS;
-    }
-
-    return FAIL;
 }
 
 
